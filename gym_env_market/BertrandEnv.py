@@ -78,6 +78,3 @@ class BertrandEnv(gym.Env):
     def close(self):
         pass
 
-
-# Exemple d'utilisation
-env = BertrandEnv()
