@@ -39,11 +39,11 @@ class BertrandEnv(gym.Env):
 
     def calculate_nash_price(self):
         # Calcul simplifié du prix de Nash (à adapter selon le modèle exact)
-        return self.c + 0.1  # Exemple
+        return self.c   # Exemple
 
     def calculate_monopoly_price(self):
         # Calcul simplifié du prix de monopole
-        return self.c + 0.5  # Exemple
+        return self.c + 3  # Exemple
 
     def logit_demand(self, prices):
         exponents = [(self.a - p) / self.mu for p in prices]

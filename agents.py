@@ -3,7 +3,7 @@ import numpy as np
 
 class QLearningAgent:
     def __init__(self, state_size, action_size, alpha=0.1, gamma=0.95,
-                 epsilon_start=1.0, epsilon_decay=0.9995, epsilon_min=0.01):
+                 epsilon_start=1.0, epsilon_decay=0.9995, epsilon_min=0.0):
         self.q_table = np.zeros((state_size, action_size))
         self.alpha = alpha  # Taux d'apprentissage
         self.gamma = gamma  # Facteur d'actualisation
