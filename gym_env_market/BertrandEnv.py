@@ -6,7 +6,7 @@ import numpy as np
 class BertrandEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, n_firms=2, m=15, mu=0.25, a=1, a0=0, c=1, xi=0.1):
+    def __init__(self, n_firms=2, m=200, mu=0.25, a=1, a0=0, c=1, xi=0.1):
         super(BertrandEnv, self).__init__()
 
         # Paramètres économiques
@@ -16,6 +16,7 @@ class BertrandEnv(gym.Env):
         self.a0 = a0
         self.c = c
         self.xi = xi
+        self.prices = np.ones(n_firms)
 
         # Calcul des prix de référence
         self.pN = self.calculate_nash_price()
@@ -54,13 +55,18 @@ class BertrandEnv(gym.Env):
         min_price = self.pN - self.xi * (self.pM - self.pN)
         max_price = self.pM + self.xi * (self.pM - self.pN)
         prices = [min_price + (max_price - min_price) * (a / (self.m - 1)) for a in actions]
-
+        self.prices = prices
         # Calcul de la demande et des profits
         shares = self.logit_demand(prices)
         profits = [(p - self.c) * s for p, s in zip(prices, shares)]
 
         # Mise à jour de l'état
         self.state = np.array(prices)
+
+        self.state = np.array([
+            int((price - min_price) / (max_price - min_price) * (self.m - 1))
+            for price in np.array(prices)
+        ])
 
         # Récompenses, done, info
         return self.state, profits, False, {}
@@ -69,7 +75,12 @@ class BertrandEnv(gym.Env):
         # Initialisation aléatoire des prix
         min_price = self.pN - self.xi * (self.pM - self.pN)
         max_price = self.pM + self.xi * (self.pM - self.pN)
-        self.state = np.random.uniform(low=min_price, high=max_price, size=self.n_firms)
+        continuous_prices = np.random.uniform(low=min_price, high=max_price, size=self.n_firms)
+
+        self.state = np.array([
+            int((price - min_price) / (max_price - min_price) * (self.m - 1))
+            for price in continuous_prices
+        ])
         return self.state
 
     def render(self, mode='human'):
