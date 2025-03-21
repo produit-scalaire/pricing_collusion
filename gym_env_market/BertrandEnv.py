@@ -1,13 +1,17 @@
 import gym
 from gym import spaces
 import numpy as np
-
+from scipy.optimize import root_scalar
+from collections import deque
 
 class BertrandEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, n_firms=2, m=200, mu=0.25, a=1, a0=0, c=1, xi=0.1):
+    def __init__(self, n_firms=2, m=200, mu=0.25, k=1, a=1, a0=0, c=1, xi=0.1):
         super(BertrandEnv, self).__init__()
+
+        self.k = k  # Longueur mémoire
+        self.price_history = deque(maxlen=k)
 
         # Paramètres économiques
         self.n_firms = n_firms
@@ -22,28 +26,45 @@ class BertrandEnv(gym.Env):
         self.pN = self.calculate_nash_price()
         self.pM = self.calculate_monopoly_price()
 
+        # Intervalle de prix avec xi=0.1
+        self.min_price = self.pN - self.xi * (self.pM - self.pN)
+        self.max_price = self.pM + self.xi * (self.pM - self.pN)
+        print(self.min_price, self.max_price)
         # Espace d'action (prix discrets)
         self.m = m
         self.action_space = spaces.Discrete(m)
 
         # Espace d'observation (prix précédents)
-        self.observation_space = spaces.Box(
-            low=np.array([self.pN - self.xi * (self.pM - self.pN)] * n_firms),
-            high=np.array([self.pM + self.xi * (self.pM - self.pN)] * n_firms),
-            dtype=np.float32
-        )
+        self.observation_space = spaces.MultiDiscrete([m]*n_firms*k)
+        self.price_grid = np.linspace(self.min_price, self.max_price, m)
+        print(self.price_grid)
+
 
         # Initialisation de l'état
         self.state = None
         self.reset()
 
     def calculate_nash_price(self):
-        # Calcul simplifié du prix de Nash (à adapter selon le modèle exact)
-        return self.c   # Exemple
+        def f(p):
+            exp_term = np.exp((self.a - p) / self.mu)
+            denominator = self.n_firms * exp_term + np.exp(self.a0 / self.mu)
+            return p - self.c - self.mu * (self.n_firms * exp_term + np.exp(self.a0 / self.mu)) / (
+                    exp_term + np.exp(self.a0 / self.mu))
+
+        # Intervalle de recherche réaliste pour pN
+        result = root_scalar(f, bracket=[self.c + 0.1, self.c + 2 * self.mu], method='brentq')
+        return result.root
 
     def calculate_monopoly_price(self):
-        # Calcul simplifié du prix de monopole
-        return self.c + 3  # Exemple
+        def f(p):
+            exp_term = np.exp((self.a - p) / self.mu)
+            total_demand = (self.n_firms * exp_term) / (self.n_firms * exp_term + np.exp(self.a0 / self.mu))
+            derivative = (total_demand * (1 - total_demand)) / self.mu  # Dérivée correcte
+            return (p - self.c) * derivative - total_demand
+
+        # Intervalle de recherche réaliste pour pM
+        result = root_scalar(f, bracket=[self.c + self.mu, self.c + 5 * self.mu], method='brentq')
+        return result.root
 
     def logit_demand(self, prices):
         exponents = [(self.a - p) / self.mu for p in prices]
@@ -52,10 +73,10 @@ class BertrandEnv(gym.Env):
 
     def step(self, actions):
         # Conversion des actions discrètes en prix
-        min_price = self.pN - self.xi * (self.pM - self.pN)
-        max_price = self.pM + self.xi * (self.pM - self.pN)
-        prices = [min_price + (max_price - min_price) * (a / (self.m - 1)) for a in actions]
+        prices = [self.price_grid[a] for a in actions]
+
         self.prices = prices
+        self.price_history.append(actions)
         # Calcul de la demande et des profits
         shares = self.logit_demand(prices)
         profits = [(p - self.c) * s for p, s in zip(prices, shares)]
@@ -64,7 +85,7 @@ class BertrandEnv(gym.Env):
         self.state = np.array(prices)
 
         self.state = np.array([
-            int((price - min_price) / (max_price - min_price) * (self.m - 1))
+            int((price - self.min_price) / (self.max_price - self.min_price) * (self.m - 1))
             for price in np.array(prices)
         ])
 
@@ -72,16 +93,15 @@ class BertrandEnv(gym.Env):
         return self.state, profits, False, {}
 
     def reset(self):
-        # Initialisation aléatoire des prix
-        min_price = self.pN - self.xi * (self.pM - self.pN)
-        max_price = self.pM + self.xi * (self.pM - self.pN)
-        continuous_prices = np.random.uniform(low=min_price, high=max_price, size=self.n_firms)
+        self.price_history.clear()
+        # Initialiser avec k périodes de prix aléatoires
+        for _ in range(self.k):
+            self.price_history.append(np.random.choice(self.action_space.n, self.n_firms))
+        return self._get_state()
 
-        self.state = np.array([
-            int((price - min_price) / (max_price - min_price) * (self.m - 1))
-            for price in continuous_prices
-        ])
-        return self.state
+    def _get_state(self):
+        # État = concaténation des k derniers prix (ex: k=1 -> [p1_t-1, p2_t-1])
+        return np.array(self.price_history).flatten()
 
     def render(self, mode='human'):
         print(f"Current prices: {self.state}")
